@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">AeroCine</string>
+    <string name="action_record">Rekam</string>
+    <string name="action_stop">Berhenti</string>
+    <string name="action_settings">Pengaturan</string>
+    <string name="permission_camera_required">Izin kamera diperlukan untuk merekam video.</string>
+    <string name="permission_audio_required">Izin mikrofon diperlukan untuk merekam audio.</string>
+    <string name="grant_permission">Beri Izin</string>
+</resources>

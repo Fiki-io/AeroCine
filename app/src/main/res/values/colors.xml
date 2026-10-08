@@ -1,0 +1,8 @@
+<resources>
+    <color name="matte_black">#121212</color>
+    <color name="dark_surface">#1A1A1A</color>
+    <color name="slate_gray">#2D3139</color>
+    <color name="neutral_gray">#8E9297</color>
+    <color name="soft_white">#F0F0F2</color>
+    <color name="record_crimson">#D32F2F</color>
+</resources>
