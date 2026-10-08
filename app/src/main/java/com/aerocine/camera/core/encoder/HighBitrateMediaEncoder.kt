@@ -77,7 +77,9 @@ class HighBitrateMediaEncoder {
             start()
         }
 
-        muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).apply {
+            setOrientationHint(90)
+        }
         isMuxerStarted = false
         videoTrackIndex = -1
         audioTrackIndex = -1

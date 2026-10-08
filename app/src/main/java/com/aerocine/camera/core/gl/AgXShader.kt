@@ -11,12 +11,13 @@ object AgXShader {
         layout(location = 1) in vec4 aTexCoord;
 
         uniform mat4 uSTMatrix;
-        uniform mat4 uWarpMatrix; // Matriks kompensasi rotasi giroskop real-time
+        uniform mat4 uOrientationMatrix; // Matriks orientasi dan rasio aspek
+        uniform mat4 uWarpMatrix;        // Matriks kompensasi rotasi giroskop real-time
         out vec2 vTexCoord;
 
         void main() {
-            // Terapkan kompensasi getaran sebelum proyeksi layar
-            gl_Position = uWarpMatrix * aPosition;
+            // Terapkan koreksi orientasi sensor dan kompensasi getaran
+            gl_Position = uWarpMatrix * uOrientationMatrix * aPosition;
             vTexCoord = (uSTMatrix * aTexCoord).xy;
         }
     """

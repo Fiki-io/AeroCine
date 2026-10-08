@@ -67,7 +67,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onPreviewSurfaceAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
         val config = _uiState.value.config
-        surfaceTexture.setDefaultBufferSize(config.resolution.size.width, config.resolution.size.height)
+        surfaceTexture.setDefaultBufferSize(width, height)
         val surface = Surface(surfaceTexture)
         uiSurface = surface
 
@@ -76,6 +76,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             previewSurface = surface,
             width = width,
             height = height,
+            cameraWidth = config.resolution.size.width,
+            cameraHeight = config.resolution.size.height,
             onReady = { cameraInputSurface ->
                 cameraEngine.openCamera(
                     onOpened = {

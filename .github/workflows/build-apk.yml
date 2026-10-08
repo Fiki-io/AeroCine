@@ -37,24 +37,24 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --build-cache --parallel --stacktrace
+      - name: Build Signed Release APK
+        run: ./gradlew assembleRelease --build-cache --parallel --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AeroCine-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/release/app-release.apk
 
       - name: Upload to High-Speed Mirrors
         run: |
-          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          APK_PATH="app/build/outputs/apk/release/app-release.apk"
           if [ -f "$APK_PATH" ]; then
-            cp "$APK_PATH" "AeroCine-v1.0.0-debug.apk"
+            cp "$APK_PATH" "AeroCine-v1.0.0-signed.apk"
 
             # 1. Litterbox (Catbox) - Direct Fast Download (No Captcha)
             echo "Uploading APK to Litterbox..."
-            LITTER_URL=$(curl -s --max-time 30 -F "reqtype=fileupload" -F "time=72h" -F "fileToUpload=@AeroCine-v1.0.0-debug.apk" https://litterbox.catbox.moe/resources/internals/api.php)
+            LITTER_URL=$(curl -s --max-time 30 -F "reqtype=fileupload" -F "time=72h" -F "fileToUpload=@AeroCine-v1.0.0-signed.apk" https://litterbox.catbox.moe/resources/internals/api.php)
             echo "Litterbox output: $LITTER_URL"
             if [[ "$LITTER_URL" =~ ^https?:// ]]; then
               echo "================================================="
@@ -66,7 +66,7 @@ jobs:
 
             # 2. TmpFiles Upload
             echo "Uploading APK to TmpFiles..."
-            TMP_RESP=$(curl -s --max-time 45 -F "file=@AeroCine-v1.0.0-debug.apk" https://tmpfiles.org/api/v1/upload)
+            TMP_RESP=$(curl -s --max-time 45 -F "file=@AeroCine-v1.0.0-signed.apk" https://tmpfiles.org/api/v1/upload)
             TMP_URL=$(echo "$TMP_RESP" | jq -r '.data.url // empty')
             if [ -n "$TMP_URL" ]; then
               echo "TMPFILES DOWNLOAD LINK: $TMP_URL"
