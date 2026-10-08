@@ -17,21 +17,25 @@ class CameraSurfaceRenderer {
         private set
 
     private var uSTMatrixHandle: Int = -1
+    private var uWarpMatrixHandle: Int = -1
     private var uTexelSizeHandle: Int = -1
 
     private val vertexBuffer: FloatBuffer
     private val texCoordBuffer: FloatBuffer
 
     private val transformMatrix = FloatArray(16)
+    private val identityMatrix = FloatArray(16)
     private var viewportWidth: Int = 1920
     private var viewportHeight: Int = 1080
 
     init {
+        // Skala 1.08x (crop 8%) untuk memberi ruang kompensasi stabilisasi getaran
+        val s = 1.08f
         val quadCoords = floatArrayOf(
-            -1.0f, -1.0f, 0.0f,
-             1.0f, -1.0f, 0.0f,
-            -1.0f,  1.0f, 0.0f,
-             1.0f,  1.0f, 0.0f
+            -s, -s, 0.0f,
+             s, -s, 0.0f,
+            -s,  s, 0.0f,
+             s,  s, 0.0f
         )
         val texCoords = floatArrayOf(
             0.0f, 0.0f,
@@ -57,6 +61,7 @@ class CameraSurfaceRenderer {
             }
 
         Matrix.setIdentityM(transformMatrix, 0)
+        Matrix.setIdentityM(identityMatrix, 0)
     }
 
     fun initializeGl() {
@@ -74,6 +79,7 @@ class CameraSurfaceRenderer {
 
         program = createProgram(AgXShader.VERTEX_SHADER, AgXShader.FRAGMENT_SHADER)
         uSTMatrixHandle = GLES30.glGetUniformLocation(program, "uSTMatrix")
+        uWarpMatrixHandle = GLES30.glGetUniformLocation(program, "uWarpMatrix")
         uTexelSizeHandle = GLES30.glGetUniformLocation(program, "uTexelSize")
     }
 
@@ -83,7 +89,7 @@ class CameraSurfaceRenderer {
         GLES30.glViewport(0, 0, width, height)
     }
 
-    fun drawFrame() {
+    fun drawFrame(warpMatrix: FloatArray? = null) {
         surfaceTexture?.updateTexImage()
         surfaceTexture?.getTransformMatrix(transformMatrix)
 
@@ -94,6 +100,12 @@ class CameraSurfaceRenderer {
         GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
 
         GLES30.glUniformMatrix4fv(uSTMatrixHandle, 1, false, transformMatrix, 0)
+
+        // Terapkan matriks warp stabilisasi giroskop
+        val matrixToApply = warpMatrix ?: identityMatrix
+        if (uWarpMatrixHandle >= 0) {
+            GLES30.glUniformMatrix4fv(uWarpMatrixHandle, 1, false, matrixToApply, 0)
+        }
 
         // Masukkan ukuran texel untuk kalkulasi filter unsharp
         if (uTexelSizeHandle >= 0 && viewportWidth > 0 && viewportHeight > 0) {

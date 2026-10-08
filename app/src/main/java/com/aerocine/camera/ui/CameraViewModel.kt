@@ -10,6 +10,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aerocine.camera.core.camera.CameraEngine
 import com.aerocine.camera.core.encoder.HighBitrateMediaEncoder
+import com.aerocine.camera.core.gl.CameraRenderEngine
 import com.aerocine.camera.core.sensor.GyroTelemetryEngine
 import com.aerocine.camera.core.spring.ZoomSpringEngine
 import com.aerocine.camera.model.CameraState
@@ -37,11 +38,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private val mediaEncoder = HighBitrateMediaEncoder()
     private val gyroEngine = GyroTelemetryEngine(application)
     private val springEngine = ZoomSpringEngine(initialValue = 1.0f)
+    private val renderEngine = CameraRenderEngine(gyroEngine)
 
     private val _uiState = MutableStateFlow(CameraState())
     val uiState: StateFlow<CameraState> = _uiState.asStateFlow()
 
-    private var previewSurface: Surface? = null
+    private var uiSurface: Surface? = null
     private var zoomAnimationJob: Job? = null
     private var timerJob: Job? = null
 
@@ -66,40 +68,41 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     fun onPreviewSurfaceAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
         val config = _uiState.value.config
         surfaceTexture.setDefaultBufferSize(config.resolution.size.width, config.resolution.size.height)
-        previewSurface = Surface(surfaceTexture)
+        val surface = Surface(surfaceTexture)
+        uiSurface = surface
 
-        cameraEngine.openCamera(
-            onOpened = {
-                startCameraSession()
-            },
-            onError = { error ->
-                _uiState.update { it.copy(statusMessage = error) }
+        // Inisialisasi pipa render OpenGL ES 3.0 dengan shader AgX dan stabilisasi gyro
+        renderEngine.start(
+            previewSurface = surface,
+            width = width,
+            height = height,
+            onReady = { cameraInputSurface ->
+                cameraEngine.openCamera(
+                    onOpened = {
+                        cameraEngine.startSession(
+                            surfaces = listOf(cameraInputSurface),
+                            config = _uiState.value.config,
+                            onConfigured = {
+                                _uiState.update { it.copy(statusMessage = "Siap") }
+                            },
+                            onError = { error ->
+                                _uiState.update { it.copy(statusMessage = error) }
+                            }
+                        )
+                    },
+                    onError = { error ->
+                        _uiState.update { it.copy(statusMessage = error) }
+                    }
+                )
             }
         )
     }
 
     fun onPreviewSurfaceDestroyed() {
-        previewSurface?.release()
-        previewSurface = null
+        uiSurface?.release()
+        uiSurface = null
+        renderEngine.release()
         cameraEngine.close()
-    }
-
-    private fun startCameraSession() {
-        val surfaces = mutableListOf<Surface>()
-        previewSurface?.let { surfaces.add(it) }
-
-        if (surfaces.isEmpty()) return
-
-        cameraEngine.startSession(
-            surfaces = surfaces,
-            config = _uiState.value.config,
-            onConfigured = {
-                _uiState.update { it.copy(statusMessage = "Siap") }
-            },
-            onError = { error ->
-                _uiState.update { it.copy(statusMessage = error) }
-            }
-        )
     }
 
     fun setZoomTarget(target: Float) {
@@ -120,9 +123,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                     cameraEngine.setZoomRatio(currentVal)
                     _uiState.update { it.copy(currentZoom = currentVal) }
 
-                    delay(16) // Siklus tick ~60 FPS
+                    delay(16) // Siklus tick 60 FPS
                 }
-                // Pastikan snap ke target akhir saat berhenti
                 val finalVal = springEngine.targetValue
                 cameraEngine.setZoomRatio(finalVal)
                 _uiState.update { it.copy(currentZoom = finalVal) }
@@ -150,26 +152,19 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         currentGyroFile = File(outputDir, "AEROCINE_${timestamp}_gyro.csv")
 
         try {
-            val encoderSurface = mediaEncoder.startRecording(currentVideoFile!!, _uiState.value.config)
+            val config = _uiState.value.config
+            val encoderSurface = mediaEncoder.startRecording(currentVideoFile!!, config)
             currentGyroFile?.let { gyroEngine.startRecording(it) }
 
-            // Re-konfigurasi sesi kamera dengan menambahkan encoderSurface
-            val surfaces = mutableListOf<Surface>()
-            previewSurface?.let { surfaces.add(it) }
-            surfaces.add(encoderSurface)
-
-            cameraEngine.startSession(
-                surfaces = surfaces,
-                config = _uiState.value.config,
-                onConfigured = {
-                    _uiState.update { it.copy(isRecording = true, recordingDurationSec = 0L) }
-                    startTimer()
-                },
-                onError = { error ->
-                    _uiState.update { it.copy(statusMessage = "Gagal memulai perekaman: $error") }
-                    stopRecording()
-                }
+            // Tautkan encoder surface ke pipa render OpenGL tanpa perlu mereset sesi Camera2
+            renderEngine.attachEncoderSurface(
+                encoderSurface = encoderSurface,
+                width = config.resolution.size.width,
+                height = config.resolution.size.height
             )
+
+            _uiState.update { it.copy(isRecording = true, recordingDurationSec = 0L) }
+            startTimer()
         } catch (e: Exception) {
             Log.e(TAG, "Kesalahan memulai perekaman: ${e.message}")
             _uiState.update { it.copy(statusMessage = "Kesalahan encoder: ${e.message}") }
@@ -180,10 +175,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         timerJob?.cancel()
         timerJob = null
 
+        renderEngine.detachEncoderSurface()
         mediaEncoder.stopRecording()
         gyroEngine.stopRecording()
 
-        // Pindai file ke MediaStore agar muncul di Galeri
+        // Pindai file ke MediaStore agar langsung terdaftar di Galeri ponsel
         currentVideoFile?.let { file ->
             MediaScannerConnection.scanFile(
                 getApplication(),
@@ -194,9 +190,6 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         _uiState.update { it.copy(isRecording = false, recordingDurationSec = 0L) }
-
-        // Kembalikan sesi kamera hanya ke previewSurface
-        startCameraSession()
     }
 
     private fun startTimer() {
@@ -250,13 +243,26 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private fun updateConfig(update: (VideoConfig) -> VideoConfig) {
         val newConfig = update(_uiState.value.config)
         _uiState.update { it.copy(config = newConfig) }
-        startCameraSession()
+
+        renderEngine.cameraInputSurface?.let { inputSurface ->
+            cameraEngine.startSession(
+                surfaces = listOf(inputSurface),
+                config = newConfig,
+                onConfigured = {
+                    _uiState.update { it.copy(statusMessage = "Siap") }
+                },
+                onError = { error ->
+                    _uiState.update { it.copy(statusMessage = error) }
+                }
+            )
+        }
     }
 
     override fun onCleared() {
         super.onCleared()
         stopRecording()
         gyroEngine.stopListening()
+        renderEngine.release()
         cameraEngine.close()
         cameraEngine.stopBackgroundThread()
     }

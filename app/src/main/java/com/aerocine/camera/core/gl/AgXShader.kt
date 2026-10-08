@@ -1,8 +1,8 @@
 package com.aerocine.camera.core.gl
 
 /**
- * Shader GLSL untuk transformasi kurva warna AgX Filmis dan peningkatan mikrokontras.
- * Menggantikan pemrosesan saturasi murahan bawaan pabrik dengan degradasi highlight analog yang lembut.
+ * Shader GLSL untuk transformasi kurva warna AgX Filmis, stabilisasi orientasi jaring,
+ * dan peningkatan mikrokontras tanpa penajaman buatan.
  */
 object AgXShader {
 
@@ -11,10 +11,12 @@ object AgXShader {
         layout(location = 1) in vec4 aTexCoord;
 
         uniform mat4 uSTMatrix;
+        uniform mat4 uWarpMatrix; // Matriks kompensasi rotasi giroskop real-time
         out vec2 vTexCoord;
 
         void main() {
-            gl_Position = aPosition;
+            // Terapkan kompensasi getaran sebelum proyeksi layar
+            gl_Position = uWarpMatrix * aPosition;
             vTexCoord = (uSTMatrix * aTexCoord).xy;
         }
     """
@@ -54,7 +56,7 @@ object AgXShader {
             vec4 baseColor = texture(sTexture, vTexCoord);
             vec3 col = baseColor.rgb;
 
-            // Peningkatan mikrokontras (Unsharp mask halus) tanpa artefak halo buatan
+            // Peningkatan mikrokontras (Unsharp mask halus) untuk menjaga detail tekstur alami
             if (uTexelSize.x > 0.0 && uTexelSize.y > 0.0) {
                 vec3 blur = (
                     texture(sTexture, vTexCoord + vec2(uTexelSize.x, 0.0)).rgb +
@@ -62,7 +64,7 @@ object AgXShader {
                     texture(sTexture, vTexCoord + vec2(0.0, uTexelSize.y)).rgb +
                     texture(sTexture, vTexCoord - vec2(0.0, uTexelSize.y)).rgb
                 ) * 0.25;
-                col = col + (col - blur) * 0.20; // 20% penajaman mikro optik alami
+                col = col + (col - blur) * 0.20; // 20% peningkatan mikrokontras
                 col = max(col, vec3(0.0));
             }
 
